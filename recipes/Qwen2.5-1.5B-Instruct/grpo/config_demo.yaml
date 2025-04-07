@@ -39,11 +39,10 @@ push_to_hub: true
 report_to:
 - wandb
 reward_funcs:
-- code
-- repetition_penalty
+- accuracy
+
 reward_weights:
 - 1.0
-- 0.1
 save_strategy: "steps"
 save_steps: 50
 save_total_limit: 1
