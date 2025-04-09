@@ -60,3 +60,4 @@ exploit_scale: 0.9
 schedule_eta: 0.001
 schedule_t0: 1000
 advantage_epsilon: 1e-8
+max_shift_token: 500
