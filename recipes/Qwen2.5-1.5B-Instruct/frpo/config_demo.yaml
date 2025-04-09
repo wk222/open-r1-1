@@ -53,3 +53,10 @@ save_total_limit: 1
 seed: 42
 temperature: 1.0
 warmup_ratio: 0.03
+#FRPO独有参数
+explore_lambda: 1
+explore_mu: 1
+exploit_scale: 0.9
+schedule_eta: 0.001
+schedule_t0: 1000
+advantage_epsilon: 1e-8
