@@ -337,6 +337,119 @@ def _init_event_loop():
         asyncio.set_event_loop(loop)
     return loop
 
+def good_accuracy(
+    completions,          # 模型生成的完成列表 (通常是 list[list[dict]] 或 list[str])
+    solution,             # 数据集中的基准答案列表 (需要通过 **kwargs 传入)
+    ngram_size: int,      # 计算重复惩罚用的 n-gram 大小
+    max_penalty: float,   # 重复惩罚的最大值 (应为负数)
+    penalty_scale_factor: float = 0.1, # 应用于惩罚的缩放因子
+    **kwargs              # GRPOTrainer 传入的其他数据集列
+):
+    """
+    计算组合奖励：如果答案准确则为1.0，如果不准确则为 0.0 + scaled_repetition_penalty。
+
+    参数:
+        completions: 模型生成的完成列表。
+        solution: 数据集中对应的基准答案列表。
+        ngram_size: 用于计算重复惩罚的n-gram大小。
+        max_penalty: 最大的（负数）重复惩罚值。
+        penalty_scale_factor: 当答案错误时，应用于重复惩罚的缩放因子 (默认为 0.1)。
+        **kwargs: GRPOTrainer 传入的其他数据集列。
+
+    返回:
+        list[float]: 每个 completion 对应的奖励值列表。
+    """
+    if max_penalty > 0:
+        raise ValueError(f"max_penalty {max_penalty} 应该是负数或零")
+
+    final_rewards = []
+
+    # 尝试处理对话格式，如果失败则假定为标准格式
+    try:
+        # 假设是对话格式: list[list[dict]]
+        contents = [comp[0]["content"] for comp in completions]
+    except (TypeError, IndexError, KeyError):
+        # 否则，假设是标准格式: list[str]
+        if isinstance(completions, list) and all(isinstance(c, str) for c in completions):
+            contents = completions
+        else:
+            raise ValueError("无法识别 completions 的格式 (既不是 list[str] 也不是 list[list[dict]])")
+
+    if len(contents) != len(solution):
+        raise ValueError(f"completions ({len(contents)}) 和 solution ({len(solution)}) 的数量必须匹配")
+    def zipngram(text: str, n: int):
+        """生成文本的n-gram元组。"""
+        words = text.lower().split()
+        if len(words) < n:
+            return [] # 如果文本长度小于n，则没有n-gram
+        return zip(*[words[i:] for i in range(n)])        
+
+    for content, sol in zip(contents, solution):
+        # 1. 检查准确性 (来自 accuracy_reward 逻辑)
+        is_correct = False
+        try:
+            gold_parsed = parse(sol, extraction_mode="first_match", extraction_config=[LatexExtractionConfig()])
+            if len(gold_parsed) != 0:
+                answer_parsed = parse(
+                    content,
+                    extraction_config=[
+                        LatexExtractionConfig(
+                            normalization_config=NormalizationConfig(
+                                nits=False, malformed_operators=False, basic_latex=True,
+                                equations=True, boxed="all", units=True
+                            ),
+                            boxed_match_priority=0, try_extract_without_anchor=False
+                        )
+                    ],
+                    extraction_mode="first_match"
+                )
+                try:
+                    is_correct = verify(answer_parsed, gold_parsed)
+                except Exception as verify_err:
+                    print(f"验证失败: {verify_err}, 回答: {answer_parsed}, 基准: {gold_parsed}")
+                    is_correct = False
+            else:
+                print(f"警告: 无法解析基准答案，视为正确以跳过惩罚: {sol}")
+                is_correct = True # 无法解析基准答案时，按原逻辑视为正确
+        except Exception as parse_err:
+             print(f"解析失败: {parse_err}, 回答: {content}, 基准: {sol}")
+             is_correct = False
+
+        # 2. 计算最终奖励
+        if is_correct:
+            final_reward = 1.0
+        else:
+            # 答案错误，计算重复惩罚 (来自 repetition_penalty_reward 逻辑)
+            repetition_penalty = 0.0
+            if content == "" or len(content.split()) < ngram_size:
+                 # 如果内容为空或太短，无法计算n-gram，惩罚为0
+                 pass
+            else:
+                 try:
+                     ngrams_set = set()
+                     total_ngrams = 0
+                     for ng in zipngram(content, ngram_size):
+                         ngrams_set.add(ng)
+                         total_ngrams += 1
+
+                     if total_ngrams > 0:
+                         # 计算重复度比例
+                         scaling = 1.0 - (len(ngrams_set) / total_ngrams)
+                         # 应用最大惩罚值 (max_penalty 是负数)
+                         repetition_penalty = scaling * max_penalty
+                     # else: total_ngrams is 0, penalty remains 0.0
+                 except Exception as e:
+                     print(f"计算重复惩罚时出错: {e}")
+                     repetition_penalty = 0.0 # 出错时惩罚为0
+
+            # 最终奖励 = 基础错误奖励(0) + 缩放后的惩罚
+            final_reward = 0.0 + penalty_scale_factor * repetition_penalty
+            final_reward = min(final_reward, 0.0) # 确保惩罚不会意外变正
+
+        final_rewards.append(final_reward)
+
+    # 返回奖励列表，格式与示例一致
+    return final_rewards
 
 def ioi_code_reward(completions, test_batch_size: int = 1, **kwargs) -> list[float]:
     """Reward function that evaluates IOI problems using Piston+our IOI package.
@@ -539,6 +652,7 @@ async def run_script(script: str, language: str, semaphore: asyncio.Semaphore) -
 def get_reward_funcs(script_args) -> list[Callable]:
     REWARD_FUNCS_REGISTRY = {
         "accuracy": accuracy_reward,
+        "good_accuracy": good_accuracy,
         "format": format_reward,
         "reasoning_steps": reasoning_steps_reward,
         "cosine": get_cosine_scaled_reward(
