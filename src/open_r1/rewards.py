@@ -338,8 +338,6 @@ def _init_event_loop():
     return loop
 
 def good_accuracy(
-    completions,          # 模型生成的完成列表 (通常是 list[list[dict]] 或 list[str])
-    solution,             # 数据集中的基准答案列表 (需要通过 **kwargs 传入)
     ngram_size: int,      # 计算重复惩罚用的 n-gram 大小
     max_penalty: float,   # 重复惩罚的最大值 (应为负数)
     penalty_scale_factor: float = 0.1, # 应用于惩罚的缩放因子
@@ -359,6 +357,8 @@ def good_accuracy(
     返回:
         list[float]: 每个 completion 对应的奖励值列表。
     """
+    completions = kwargs["completions"]
+    solution = kwargs["solution"]
     if max_penalty > 0:
         raise ValueError(f"max_penalty {max_penalty} 应该是负数或零")
 
@@ -652,9 +652,11 @@ async def run_script(script: str, language: str, semaphore: asyncio.Semaphore) -
 def get_reward_funcs(script_args) -> list[Callable]:
     REWARD_FUNCS_REGISTRY = {
         "accuracy": accuracy_reward,
-        "good_accuracy": good_accuracy(
+        "good_accuracy": lambda **kwargs: good_accuracy(
             ngram_size=script_args.repetition_n_grams,
             max_penalty=script_args.repetition_max_penalty,
+            penalty_scale_factor=0.1,
+            **kwargs
         ),
         "format": format_reward,
         "reasoning_steps": reasoning_steps_reward,
