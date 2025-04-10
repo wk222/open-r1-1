@@ -652,7 +652,10 @@ async def run_script(script: str, language: str, semaphore: asyncio.Semaphore) -
 def get_reward_funcs(script_args) -> list[Callable]:
     REWARD_FUNCS_REGISTRY = {
         "accuracy": accuracy_reward,
-        "good_accuracy": good_accuracy,
+        "good_accuracy": good_accuracy(
+            ngram_size=script_args.repetition_n_grams,
+            max_penalty=script_args.repetition_max_penalty,
+        ),
         "format": format_reward,
         "reasoning_steps": reasoning_steps_reward,
         "cosine": get_cosine_scaled_reward(
