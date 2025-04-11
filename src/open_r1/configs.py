@@ -125,6 +125,13 @@ class GRPOScriptArguments(trl.ScriptArguments):
         default=0.5,
         metadata={"help": "Minimum reward for correct answers"},
     )
+    dataset_config: str = field(
+        default="en",
+        metadata={
+            "help": "数据集配置名称，必须是 'all'、'cn' 或 'en' 其中之一",
+            "choices": ["all", "cn", "en"],
+        },
+    )    
     cosine_max_value_correct: float = field(
         default=1.0,
         metadata={"help": "Maximum reward for correct answers"},
