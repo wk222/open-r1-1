@@ -6,58 +6,56 @@ attn_implementation: flash_attention_2
 
 # Data training arguments
 dataset_name: DigitalLearningGmbH/MATH-lighteval
-system_prompt: "You are an AI Assistant specialized in generating accurate and runnable code based on user requests.\n\nYour response must follow this structure precisely:\n\n1.  **Internal Thinking (`>Thinking...>` block):** Before generating the code, outline your plan concisely within a `<think>` block. This should include:\n    *   Identifying the programming language (if not specified, make a reasonable choice).\n    *   Listing the core logic steps or functions needed.\n    *   Identifying necessary libraries/modules to import.\n\n2.  **Code Output (`<answer>` block):** Present *only* the complete, runnable code in the `<answer>` block.\n    *   The `<answer>` block must contain *exclusively* code.\n    *   Do *not* include any introductory sentences, explanations, or summaries before or after the code within the `<answer>` block.\n    *   Ensure all necessary imports, dependencies, function/class definitions, and setup are included so the code can be executed directly (copy-paste runnable).\n\n**Example Interaction:**\n\n**User Request:** Write a Python function that takes a list of numbers and returns the sum.\n\n**AI's Expected Response:**\n\n<think>\n1. Language: Python\n2. Logic: Define a function `sum_list` that takes one argument (a list). Use the built-in `sum()` function. Return the result.\n3. Imports: None needed for basic sum."
+system_prompt: "You are a helpful AI Assistant specializing in mathematics. You provide well-reasoned, step-by-step solutions. Your response must follow this structure precisely: 1. **Internal Thinking (`<think>` block):** Before providing the solution, outline your core reasoning process or plan concisely within a `<think>` block if necessary you think ,don't let this limited your creavtity. YOU ARE GIVING ENOUGH FLEXIBILITY TO EXPLORE VARIOUS logical FORMAT TO HELP YOU ADDRESS THE PROBLEM AND SLOVE IT, SLOVED, REWARDED. If do so ,focus only on the essential logical steps or strategy. 2. **Detailed Solution (`<answer>` block):** Present the full, detailed, step-by-step solution in the `<answer>` block. Explain your reasoning clearly at each step. 3. **Final Answer Formatting:** Conclude the `<answer>` block by presenting the final numerical answer, simplified expression, or equation using LaTeX format, enclosed within `\boxed{}`. **A Example of Step by step problem sloving Structure:** <think> ```1. Identify the type of problem and address key point to slove it.\n2. Define variables.\n3. Set up the equation(s).\n4. Solve the equation(s).\n5. State the final answer in the required format.```"
+
 # GRPO trainer config
-beta: 0.01
+
 bf16: true
 use_vllm: true
 do_eval: false
-gradient_accumulation_steps: 4
+gradient_accumulation_steps: 2
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:
-  use_reentrant: false
-hub_model_id: Qwen2.5-1.5B-Open-R1-Code-GRPO
+use_reentrant: false
+hub_model_id: Qwen2.5-1.5B-Open-R1-GRPO
 hub_strategy: every_save
-learning_rate: 5.0e-06
+learning_rate: 2.0e-05
 log_completions: true
 log_level: info
 logging_first_step: true
 logging_steps: 1
 logging_strategy: steps
-lr_scheduler_type: cosine_with_min_lr
-lr_scheduler_kwargs:
-  min_lr_rate: 0.1
-max_prompt_length: 1024
-max_completion_length: 4096
-max_steps: 500
-num_generations: 8
+lr_scheduler_type: cosine
+max_prompt_length: 512
+max_completion_length: 2048
+max_steps: -1
+num_generations: 32
 num_train_epochs: 1
-output_dir: data/Qwen2.5-1.5B-Open-R1-Code-GRPO
+output_dir: data/Qwen2.5-1.5B-Open-R1-GRPO
 overwrite_output_dir: true
+per_device_eval_batch_size: 16
 per_device_train_batch_size: 16
 push_to_hub: true
-scale_rewards: false
-epsilon: 99
-epsilon_high: 9999
 report_to:
 - wandb
 reward_funcs:
-- code
-- repetition_penalty
+- good_accuracy
+- length
 reward_weights:
 - 1.0
-- 0.3
-save_strategy: "steps"
-save_steps: 50
+- 0.1
+save_strategy: "epoch"
 save_total_limit: 1
 seed: 42
-temperature: 1.0
-warmup_ratio: 0.03
+warmup_ratio: 0.1
+scale_rewards: false
+epsilon: 0.2
+epsilon_high: 0.28
 #FRPO独有参数
 explore_lambda: 1
 explore_mu: 1
 exploit_scale: 0.9
 schedule_eta: 0.001
-schedule_t0: 1000
+schedule_t0: 5000
 advantage_epsilon: 1e-8
-max_shift_token: 500
+max_shift_token: 800
