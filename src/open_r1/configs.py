@@ -128,9 +128,7 @@ class GRPOScriptArguments(trl.ScriptArguments):
     dataset_config: str = field(
         default="en",
         metadata={
-            "help": "数据集配置名称，必须是 'all'、'cn' 或 'en' 其中之一",
-            "choices": ["all", "cn", "en"],
-        },
+            "help": "数据集配置名称},
     )    
     cosine_max_value_correct: float = field(
         default=1.0,
