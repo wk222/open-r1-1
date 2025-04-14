@@ -5,15 +5,15 @@ torch_dtype: bfloat16
 attn_implementation: flash_attention_2
 
 # Data training arguments
-dataset_name: DigitalLearningGmbH/MATH-lighteval
-system_prompt: "You are a helpful AI Assistant specializing in mathematics. You provide well-reasoned, step-by-step solutions. Your response must follow this structure precisely: 1. **Internal Thinking (`<think>` block):** Before providing the solution, outline your core reasoning process or plan concisely within a `<think>` block if necessary you think ,don't let this limited your creavtity. YOU ARE GIVING ENOUGH FLEXIBILITY TO EXPLORE VARIOUS logical FORMAT TO HELP YOU ADDRESS THE PROBLEM AND SLOVE IT, SLOVED, REWARDED. If do so ,focus only on the essential logical steps or strategy. 2. **Detailed Solution (`<answer>` block):** Present the full, detailed, step-by-step solution in the `<answer>` block. Explain your reasoning clearly at each step. 3. **Final Answer Formatting:** Conclude the `<answer>` block by presenting the final numerical answer, simplified expression, or equation using LaTeX format, enclosed within `\boxed{}`. **A Example of Step by step problem sloving Structure:** <think> ```1. Identify the type of problem and address key point to slove it.\n2. Define variables.\n3. Set up the equation(s).\n4. Solve the equation(s).\n5. State the final answer in the required format.```"
-
+dataset_name: watermelonhjg/MATH-lighteval-level_2
+system_prompt: "You are a helpful AI Assistant specializing in mathematics. You provide well-reasoned, step-by-step solutions. Your response must follow this structure precisely: 1. **Internal Thinking (`<think>` block):** Before providing the solution, outline your core reasoning process or plan concisely within a `<think>` block if necessary you think ,don't let this limited your creavtity. YOU ARE GIVING ENOUGH FLEXIBILITY TO EXPLORE VARIOUS logical FORMAT TO HELP YOU ADDRESS THE PROBLEM AND SLOVE IT, SLOVED, REWARDED. If do so ,focus only on the essential logical steps or strategy. 2. **Detailed Solution (`<answer>` block):** Present the full, detailed, step-by-step solution in the `<answer>` block. Explain your reasoning clearly at each step. 3. **Final Answer Formatting:** Conclude the `<answer>` block by presenting the final numerical answer, simplified expression, or equation using LaTeX format, enclosed within `\boxed{}`. "
+dataset_config: default
 # GRPO trainer config
-
+dataset_prompt_column: problem
 bf16: true
 use_vllm: true
 do_eval: false
-gradient_accumulation_steps: 2
+gradient_accumulation_steps: 16
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:
 use_reentrant: false
@@ -30,22 +30,21 @@ max_prompt_length: 512
 max_completion_length: 2048
 max_steps: -1
 num_generations: 32
-num_train_epochs: 1
+num_train_epochs: 2
 output_dir: data/Qwen2.5-1.5B-Open-R1-GRPO
 overwrite_output_dir: true
 per_device_eval_batch_size: 16
 per_device_train_batch_size: 16
-push_to_hub: true
+remove_unused_columns: false
+push_to_hub: false
 report_to:
 - wandb
 reward_funcs:
 - good_accuracy
-- length
 reward_weights:
 - 1.0
-- 0.1
 save_strategy: "epoch"
-save_total_limit: 1
+save_total_limit: 0
 seed: 42
 warmup_ratio: 0.1
 scale_rewards: false
@@ -55,7 +54,7 @@ epsilon_high: 0.28
 explore_lambda: 1
 explore_mu: 1
 exploit_scale: 0.9
-schedule_eta: 0.001
+schedule_eta: 0.01
 schedule_t0: 5000
 advantage_epsilon: 1e-8
 max_shift_token: 800
