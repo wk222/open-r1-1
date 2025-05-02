@@ -51,4 +51,5 @@ shuffle_dataset: false
 mask_truncated_completions: true
 epsilon_high: 0.28
 epsilon: 0.20
-
+vllm_mode: "colocate"
+vllm_gpu_memory_utilization: 0.3
