@@ -281,7 +281,7 @@ def get_cosine_scaled_reward(
     return cosine_scaled_reward
 
 
-def get_repetition_penalty_reward(ngram_size: int, max_penalty: float, language: str = "en"):
+def get_repetition_penalty_reward(ngram_size: int, max_penalty: float):
     """
     Computes N-gram repetition penalty as described in Appendix C.2 of https://arxiv.org/abs/2502.03373.
     Reference implementation from: https://github.com/eddycmu/demystify-long-cot/blob/release/openrlhf/openrlhf/reward/repetition.py
@@ -289,25 +289,13 @@ def get_repetition_penalty_reward(ngram_size: int, max_penalty: float, language:
     Args:
     ngram_size: size of the n-grams
     max_penalty: Maximum (negative) penalty for wrong answers
-    language: Language of the text, defaults to `en`. Used to choose the way to split the text into n-grams.
     """
     if max_penalty > 0:
         raise ValueError(f"max_penalty {max_penalty} should not be positive")
 
-    if language == "en":
-        def zipngram(text: str, ngram_size: int):
-            words = text.lower().split()
-            return zip(*[words[i:] for i in range(ngram_size)]), words
-    elif language == "zh":
-        from transformers.utils.import_utils import _is_package_available
-        if not _is_package_available("jieba"):
-            raise ValueError("Please install jieba to use Chinese language")
-        def zipngram(text: str, ngram_size: int):
-            import jieba
-            seg_list = list(jieba.cut(text))
-            return zip(*[seg_list[i:] for i in range(ngram_size)]), seg_list
-    else:
-        raise ValueError(f"Word splitting for language `{language}` is not yet implemented. Please implement your own zip-ngram function.")
+    def zipngram(text: str, ngram_size: int):
+        words = text.lower().split()
+        return zip(*[words[i:] for i in range(ngram_size)])
 
     def repetition_penalty_reward(completions, **kwargs) -> float:
         """
@@ -324,16 +312,13 @@ def get_repetition_penalty_reward(ngram_size: int, max_penalty: float, language:
             if completion == "":
                 rewards.append(0.0)
                 continue
-
-            ngrams = set()
-            total = 0
-            ngram_array, words = zipngram(completion, ngram_size)
-
-            if len(words) < ngram_size:
+            if len(completion.split()) < ngram_size:
                 rewards.append(0.0)
                 continue
 
-            for ng in ngram_array:
+            ngrams = set()
+            total = 0
+            for ng in zipngram(completion, ngram_size):
                 ngrams.add(ng)
                 total += 1
 
@@ -616,7 +601,156 @@ def get_reward_funcs(script_args) -> list[Callable]:
         ),
         "code_format": get_code_format_reward(language=script_args.code_language),
         "tag_count": tag_count_reward,
+        "good_accuracy": lambda **kwargs: good_accuracy(
+            ngram_size=script_args.repetition_n_grams,
+            max_penalty=script_args.repetition_max_penalty,
+            penalty_scale_factor=0.1,
+            **kwargs
+            ),
     }
     reward_funcs = [REWARD_FUNCS_REGISTRY[func] for func in script_args.reward_funcs]
 
     return reward_funcs
+
+
+
+def is_pure_numerical(text: str) -> bool:
+    """检查字符串是否完全由一个简单的整数或小数构成。(与之前相同)"""
+    if not isinstance(text, str): return False
+    text = text.strip()
+    if not text: return False
+    pattern = r"^[+-]?(\d+(\.\d*)?|\.\d+)$"
+    return bool(re.fullmatch(pattern, text))
+
+# 注意：不再需要 extract_numerical_value_from_parsed 和 tolerance 参数了
+
+def good_accuracy(
+    ngram_size: int,
+    max_penalty: float,
+    penalty_scale_factor: float = 0.1,
+    # tolerance 参数不再需要，因为不再直接比较浮点数
+    **kwargs
+):
+    """
+    计算组合奖励 (版本：强制使用原始逻辑，纯数字答案尝试包装后处理)。
+    - **所有情况**都尝试使用原始的 parse/verify 逻辑。
+    - 如果基准答案是纯数字，会先用花括号 {} 包装后再传入 parse。
+    - **警告**: 此方法的准确性高度依赖于 parse/verify 处理包装后数字的能力，
+               以及 verify 进行跨格式数值等价比较的能力。请务必测试！
+
+    参数:
+        ngram_size: 用于计算重复惩罚的n-gram大小。
+        max_penalty: 最大的（负数）重复惩罚值。
+        penalty_scale_factor: 当答案错误时，应用于重复惩罚的缩放因子 (默认为 0.1)。
+        **kwargs: GRPOTrainer 传入的其他数据集列, 必须包含 "completions" 和 "solution"。
+
+    返回:
+        list[float]: 每个 completion 对应的奖励值列表。
+    """
+    if "completions" not in kwargs or "solution" not in kwargs:
+        raise ValueError("kwargs 必须包含 'completions' 和 'solution'")
+
+    completions = kwargs["completions"]
+    solution = kwargs["solution"]
+
+    if max_penalty > 0:
+        raise ValueError(f"max_penalty {max_penalty} 应该是负数或零")
+
+    final_rewards = []
+
+    # --- Input Format Handling (same as before) ---
+    try:
+        contents = [comp[0]["content"] for comp in completions]
+    except (TypeError, IndexError, KeyError):
+        if isinstance(completions, list) and all(isinstance(c, str) for c in completions):
+            contents = completions
+        else:
+            raise ValueError("无法识别 completions 的格式 (既不是 list[str] 也不是 list[list[dict]])")
+    if len(contents) != len(solution):
+        raise ValueError(f"completions ({len(contents)}) 和 solution ({len(solution)}) 的数量必须匹配")
+    # --- End Input Format Handling ---
+
+    # --- N-gram Helper (same as before) ---
+    def zipngram(text: str, n: int):
+        words = text.lower().split()
+        if len(words) < n: return []
+        return zip(*[words[i:] for i in range(n)])
+    # --- End N-gram Helper ---
+
+    for content, sol in zip(contents, solution):
+        is_correct = False
+        processed_sol = sol # 默认使用原始 sol
+
+        # --- 核心修改：如果是纯数字，用花括号包装 ---
+        if is_pure_numerical(sol):
+            processed_sol = f"{{{sol.strip()}}}" # 例如 "0.5" -> "{0.5}"
+            print(f"Info: Wrapping numerical solution '{sol}' to '{processed_sol}' for parse/verify.") # Log a message
+        # ---------------------------------------------
+
+        # --- 统一使用原始的 parse/verify 逻辑 ---
+        try:
+            # 使用 processed_sol (可能是原始的，可能是包装后的)
+            gold_parsed = parse(processed_sol, extraction_mode="first_match", extraction_config=[LatexExtractionConfig()])
+
+            if len(gold_parsed) != 0:
+                # 解析模型回答 (保持不变)
+                answer_parsed = parse(
+                    content,
+                    extraction_config=[
+                        LatexExtractionConfig(
+                            normalization_config=NormalizationConfig(
+                                 nits=False, malformed_operators=False, basic_latex=True,
+                                 equations=True, boxed="all", units=True # 保持原始配置
+                            ),
+                            boxed_match_priority=0, try_extract_without_anchor=False
+                        )
+                    ],
+                    extraction_mode="first_match"
+                )
+                try:
+                    # 使用原始 verify 函数进行比较
+                    is_correct = verify(answer_parsed, gold_parsed)
+                    # Optional logging for mismatch
+                    # if not is_correct: print(f"Verify failed: Answer={answer_parsed}, Gold={gold_parsed}")
+                except Exception as verify_err:
+                    print(f"验证失败 (统一逻辑): {verify_err}, 回答: {answer_parsed}, 基准: {gold_parsed} (来自: '{processed_sol}')")
+                    is_correct = False
+            else:
+                # 如果 parse(processed_sol) 失败 (包括 parse 无法处理 "{0.5}" 的情况)
+                # 则遵循原始逻辑：视为正确以跳过惩罚
+                print(f"警告 (统一逻辑): 无法解析处理后的基准答案 '{processed_sol}' (来自原始: '{sol}'), 视为正确。")
+                is_correct = True
+        except Exception as parse_err:
+            print(f"解析失败 (统一逻辑): {parse_err}, 回答: {content}, 处理后基准: {processed_sol} (来自原始: {sol})")
+            is_correct = False
+        # --- 原始逻辑结束 ---
+
+
+        # === Reward Calculation (与之前完全相同) ===
+        final_reward = 0.0
+        if is_correct:
+            final_reward = 1.0
+        else:
+            # 计算重复惩罚... (逻辑同前)
+            repetition_penalty = 0.0
+            words_in_content = content.lower().split()
+            if content and len(words_in_content) >= ngram_size:
+                try:
+                    ngrams_set = set()
+                    total_ngrams = 0
+                    for ng in zip(*[words_in_content[i:] for i in range(ngram_size)]):
+                        ngrams_set.add(ng)
+                        total_ngrams += 1
+                    if total_ngrams > 0:
+                        scaling = 1.0 - (len(ngrams_set) / total_ngrams)
+                        repetition_penalty = scaling * max_penalty
+                except Exception as e:
+                    print(f"计算重复惩罚时出错: {e}")
+                    repetition_penalty = 0.0
+            final_reward = 0.0 + penalty_scale_factor * repetition_penalty
+            final_reward = min(final_reward, 0.0)
+
+        final_rewards.append(final_reward)
+        # === End Reward Calculation ===
+
+    return final_rewards

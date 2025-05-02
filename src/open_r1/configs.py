@@ -57,6 +57,14 @@ class GRPOConfig(trl.GRPOConfig):
 
 
 @dataclass
+class GDPOConfig(GRPOConfig):
+    """
+    Args for GDPO training. Inherits from GRPOConfig for now.
+    """
+    pass
+
+
+@dataclass
 class SFTConfig(trl.SFTConfig):
     """
     args for callbacks, benchmarks etc
@@ -91,6 +99,8 @@ class SFTConfig(trl.SFTConfig):
         default=None,
         metadata={"help": ("The group to store runs under.")},
     )
+
+
 
 
 @dataclass
@@ -178,3 +188,9 @@ class GRPOScriptArguments(trl.ScriptArguments):
         default=None,
         metadata={"help": "URL for the E2B route. See scripts/e2b_router.py"},
     )
+@dataclass
+class GDPOScriptArguments(GRPOScriptArguments):
+    """
+    Script arguments for the GDPO training script. Inherits from GRPOScriptArguments for now.
+    """
+    pass
